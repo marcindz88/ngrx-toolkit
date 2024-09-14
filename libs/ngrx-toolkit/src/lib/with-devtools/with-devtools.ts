@@ -5,9 +5,10 @@ import {
   SignalStoreFeature,
   WritableStateSource,
 } from '@ngrx/signals';
-import { effect, inject, isDevMode, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { isPlatformServer } from '@angular/common';
-import { Prettify } from './shared/prettify';
+import { Prettify } from '../shared/prettify';
+import { DEFAULT_DEVTOOLS_CONFIG, DEVTOOLS_CONFIG } from './with-devtools.config';
 
 declare global {
   interface Window {
@@ -87,7 +88,8 @@ export function withDevtools<Input extends EmptyFeatureResult>(
 ): SignalStoreFeature<Input, EmptyFeatureResult> {
   return (store) => {
     const isServer = isPlatformServer(inject(PLATFORM_ID));
-    if (isServer || !isDevMode()) {
+    const { logOnly } = inject(DEVTOOLS_CONFIG, { optional: true }) || DEFAULT_DEVTOOLS_CONFIG;
+    if (isServer || logOnly) {
       return store;
     }
 

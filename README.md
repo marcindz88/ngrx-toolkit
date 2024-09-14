@@ -76,13 +76,27 @@ patchState(this.store, {loading: false});
 updateState(this.store 'update loading', {loading: false});
 ```
 
-`withDevtools()` is by default disabled in production mode, however if you want to tree-shake it from the application bundle you need to abstract it in your environment file.
+### Configuration
+
+You may configure this feature by setting up a provider in your application:
+
+```typescript
+providers: [
+  provideStoreDevtoolsConfig({
+    logOnly: !isDevMode(), // Restrict extension to log-only mode, default is false
+  })
+]
+```
+
+When running in production you may opt to tree-shake it from the application bundle you need to abstract it in your environment file.
 
 <details>
 
   <summary>Devtools tree-shaking details</summary>
 
-  environment.ts:
+If the environment files don't exist in your project you can use the `ng generate environments` command to create them.
+
+environment.ts:
 ```typescript
 import { withDevtools } from '@angular-architects/ngrx-toolkit';
 
