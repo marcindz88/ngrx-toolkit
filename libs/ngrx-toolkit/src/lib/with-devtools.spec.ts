@@ -1,3 +1,6 @@
+let isDevMode = true;
+jest.mock('@angular/core', () => ({ ...jest.requireActual('@angular/core'), isDevMode: () => isDevMode }))
+
 import { signalStore } from '@ngrx/signals';
 import { withEntities } from '@ngrx/signals/entities';
 import { Action, withDevtools } from './with-devtools';
@@ -31,6 +34,7 @@ const createFlight = (flight: Partial<Flight> = {}) => ({
 interface SetupOptions {
   extensionsAvailable: boolean;
   inSsr: boolean;
+  isDevMode: boolean
 }
 
 interface TestData {
@@ -48,8 +52,11 @@ function run(
     const defaultOptions: SetupOptions = {
       inSsr: false,
       extensionsAvailable: true,
+      isDevMode: true,
     };
     const realOptions = { ...defaultOptions, ...options };
+
+    isDevMode = realOptions.isDevMode;
 
     const sendSpy = jest.fn<void, [Action, Record<string, unknown>]>();
     const connection = {
@@ -113,6 +120,16 @@ describe('Devtools', () => {
         expect(connectSpy).toHaveBeenCalledTimes(0);
       },
       { inSsr: true }
+    )
+  );
+
+  it(
+    'should not connect if it runs in production',
+    run(
+      ({ connectSpy }) => {
+        expect(connectSpy).toHaveBeenCalledTimes(0);
+      },
+      { isDevMode: false }
     )
   );
 
