@@ -1,11 +1,11 @@
 import {
   EmptyFeatureResult,
   PartialStateUpdater,
-  patchState as originalPatchState,
-  SignalStoreFeature,
-  WritableStateSource,
+  patchState as originalPatchState, signalStoreFeature,
+  SignalStoreFeature, withHooks, withMethods,
+  WritableStateSource
 } from '@ngrx/signals';
-import { effect, inject, InjectionToken, isDevMode, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { isPlatformServer } from '@angular/common';
 import { Prettify } from '../shared/prettify';
 import { DEFAULT_DEVTOOLS_CONFIG, DEVTOOLS_CONFIG } from './with-devtools.config';
@@ -17,6 +17,7 @@ declare global {
           connect: (options: { name: string }) => {
             send: (action: Action, state: Record<string, unknown>) => void;
           };
+          disconnect: () => void;
         }
       | undefined;
   }
@@ -26,30 +27,11 @@ export type Action = { type: string };
 
 const storeRegistry = signal<Record<string, Signal<unknown>>>({});
 
-let currentActionNames = new Set<string>();
+const getRootState = () => Object.entries(storeRegistry()).reduce((acc, [name, store]) => {
+  acc[name] = store();
+  return acc;
+}, {} as Record<string, unknown>);
 
-let synchronizationInitialized = false;
-
-function initSynchronization() {
-  effect(() => {
-    if (!connection) {
-      return;
-    }
-
-    const stores = storeRegistry();
-    const rootState: Record<string, unknown> = {};
-    for (const name in stores) {
-      const store = stores[name];
-      rootState[name] = store();
-    }
-
-    const names = Array.from(currentActionNames);
-    const type = names.length ? names.join(', ') : 'Store Update';
-    currentActionNames = new Set<string>();
-
-    connection.send({ type }, rootState);
-  });
-}
 
 function getValueFromSymbol(obj: unknown, symbol: symbol) {
   if (typeof obj === 'object' && obj && symbol in obj) {
@@ -76,8 +58,6 @@ let connection: ConnectResponse | undefined;
  */
 export function reset() {
   connection = undefined;
-  synchronizationInitialized = false;
-  storeRegistry.set({});
 }
 
 /**
@@ -86,36 +66,60 @@ export function reset() {
 export function withDevtools<Input extends EmptyFeatureResult>(
   name: string
 ): SignalStoreFeature<Input, EmptyFeatureResult> {
-  return (store) => {
-    const isServer = isPlatformServer(inject(PLATFORM_ID));
+  return store => {
+
     const { logOnly } = inject(DEVTOOLS_CONFIG, { optional: true }) || DEFAULT_DEVTOOLS_CONFIG;
+    const isServer = isPlatformServer(inject(PLATFORM_ID));
     if (isServer || logOnly) {
       return store;
     }
 
-    const extensions = window.__REDUX_DEVTOOLS_EXTENSION__;
-    if (!extensions) {
-      return store;
-    }
+    return signalStoreFeature(
+      withMethods(store => Object.keys(store).reduce((methods, actionName) => {
+          const maybeActionCreator = (store as Record<string, (...args: unknown[]) => unknown>)[actionName];
+          if ('type' in maybeActionCreator) {
+            methods[actionName] = (...args) => {
+              const action = maybeActionCreator(...args);
+              if (connection) {
+                connection.send(action as Action, getRootState());
+              }
+              return action;
+            };
+          }
+          return methods;
+        }, {} as Record<string, () => void>)
+      ),
+      withHooks({
+        onInit(store) {
+          const extensions = window.__REDUX_DEVTOOLS_EXTENSION__;
+          if (!extensions) {
+            return;
+          }
 
-    if (!connection) {
-      connection = extensions.connect({
-        name: 'NgRx Signal Store',
-      });
-    }
+          const storeSignal = getStoreSignal(store);
+          storeRegistry.update((value) => ({
+            ...value,
+            [name]: storeSignal
+          }));
 
-    const storeSignal = getStoreSignal(store);
-    storeRegistry.update((value) => ({
-      ...value,
-      [name]: storeSignal,
-    }));
+          if (!connection) {
+            connection = extensions.connect({
+              name: 'NgRx Signal Store'
+            });
+          }
+        },
+        onDestroy() {
+          storeRegistry.update((value) => {
+            delete value[name];
+            return value;
+          });
 
-    if (!synchronizationInitialized) {
-      initSynchronization();
-      synchronizationInitialized = true;
-    }
-
-    return store;
+          if (Object.keys(storeRegistry()).length === 0) {
+            window.__REDUX_DEVTOOLS_EXTENSION__?.disconnect();
+          }
+        }
+      })
+    )(store);
   };
 }
 
@@ -127,18 +131,14 @@ type PatchFn = typeof originalPatchState extends (
   : never;
 
 /**
- * @deprecated Has been renamed to `updateState`
+ * @deprecated No longer required, use regular `patchState` from `@ngrx/signals`
  */
 export const patchState: PatchFn = (state, action, ...rest) => {
   updateState(state, action, ...rest);
 };
 
 /**
- * Wrapper of `patchState` for DevTools integration. Next to updating the state,
- * it also sends the action to the DevTools.
- * @param stateSource state of Signal Store
- * @param action name of action how it will show in DevTools
- * @param updaters updater functions or objects
+ * @deprecated No longer required, use regular `patchState` from `@ngrx/signals`
  */
 export function updateState<State extends object>(
   stateSource: WritableStateSource<State>,
@@ -147,6 +147,5 @@ export function updateState<State extends object>(
     Partial<Prettify<State>> | PartialStateUpdater<Prettify<State>>
   >
 ): void {
-  currentActionNames.add(action);
   return originalPatchState(stateSource, ...updaters);
 }

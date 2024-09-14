@@ -58,7 +58,7 @@ function run(
       send: sendSpy,
     };
     const connectSpy = jest.fn(() => connection);
-    window.__REDUX_DEVTOOLS_EXTENSION__ = { connect: connectSpy };
+    window.__REDUX_DEVTOOLS_EXTENSION__ = { connect: connectSpy, disconnect: jest.fn() };
 
     TestBed.configureTestingModule({
       providers: [
